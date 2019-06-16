@@ -1,0 +1,101 @@
+apiVersion: apps/v1
+# statefullset = deployement with data preservation in mind
+kind: StatefulSet
+metadata:
+  namespace: {{ namespace }}
+  name: elasticsearch
+  labels:
+    app: elasticsearch
+spec:
+  serviceName: elasticsearch
+  replicas: {{ elasticsearch_replica_nb }}
+  selector:
+    matchLabels:
+      app: elasticsearch
+  template:
+    metadata:
+      labels:
+        app: elasticsearch
+    spec:
+# todo HA: affinity & antiaffinity when using with real cluster
+
+      #make change before starting real pod
+      initContainers:
+        - name: data-permission-bugfix
+          image: busybox
+          command: ['sh', '-c', 'chown -R 1000:1000 /usr/share/elasticsearch/data']
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/elasticsearch/data
+
+        - name: max-map-count-bugfix
+          image: busybox
+          command: ['sysctl', '-w', 'vm.max_map_count=262144']
+          securityContext:
+            privileged: true
+# real pod
+      nodeSelector:
+        nodetype: test
+      containers:
+        - name: elasticsearch
+          image: docker.elastic.co/elasticsearch/elasticsearch:{{ elasticsearch_img_version | default('7.1.1') }}
+          ports:
+            - containerPort: 9200
+              name: http
+            - containerPort: 9300
+              name: transport
+          #check if pod is ready 
+          readinessProbe:
+            httpGet:
+              path: /_cluster/health
+              port: http
+            initialDelaySeconds: 30
+            timeoutSeconds: 5
+          # check if pod is alive
+          livenessProbe:
+            tcpSocket:
+              port: transport
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            limits:
+              memory: {{ elasticsearch_ram_limit | default('1Gi') }}
+
+          #env vars
+          env:
+            - name: ES_JAVA_OPTS
+              value: -Xms{{ elasticsearch_heap_size | default('512m') }} -Xmx{{ elasticsearch_heap_size | default('512m') }}          
+
+            - name: cluster.name
+              value: {{ elasticsearch_cluster_name | default('testES') }}
+
+            - name: cluster.initial_master_nodes
+              value: "elasticsearch-0"
+
+            - name: node.name
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+
+            - name: discovery.seed_hosts
+              value: "elasticsearch.{{ namespace }}.svc.cluster.local"
+
+#volume
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/elasticsearch/data
+
+
+
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        # storageClassName: {{ elasticsearch_storage_class | default('fast-rbd ') }}
+        resources:
+          requests:
+            storage: {{ elasticsearch_storage_size | default('2Gi') }}

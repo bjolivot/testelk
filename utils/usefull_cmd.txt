@@ -1,0 +1,4 @@
+kubectl -n testelk port-forward svc/elasticsearch 9200:9200
+kubectl -n testelk port-forward svc/logstash 5044:5044
+
+

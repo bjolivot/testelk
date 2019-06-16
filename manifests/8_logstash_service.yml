@@ -1,0 +1,12 @@
+kind: Service
+apiVersion: v1
+metadata:
+  namespace: {{ namespace }}
+  name: logstash
+spec:
+  type: LoadBalancer
+  selector:
+    app: logstash
+  ports:
+    - name: beats
+      port: 5044

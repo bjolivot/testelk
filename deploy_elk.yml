@@ -1,0 +1,39 @@
+---
+- hosts: localhost
+  become: false
+
+  vars:
+    working_dir: "{{ playbook_dir }}/working_dir/"
+    namespace: testelk
+    elasticsearch_replica_nb: 1
+
+  tasks:
+  - name: delete working directory
+    file: 
+      path: "{{ working_dir }}"
+      state: absent
+  
+  - name: recreate working dir
+    file: 
+      path: "{{ working_dir }}"
+      state: directory
+  
+
+  - name: template manifests
+    template: 
+      src: "{{ item }}"
+      dest: "{{ working_dir }}/"
+    with_fileglob: "{{ playbook_dir }}/manifests/*.yml"
+
+  - name: build  list of manifests
+    set_fact:
+      manifest_list: "{{ manifest_list | default([]) + [item] }}"
+    with_fileglob: "{{ working_dir }}/*.yml"
+
+
+  - name: apply manifests
+    k8s:
+      state: present
+      src: "{{ item }}"
+    with_items: "{{ manifest_list | sort}}"
+
